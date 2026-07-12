@@ -1,0 +1,22 @@
+# Web framework
+fastapi>=0.115
+uvicorn[standard]>=0.30
+
+# Configuration
+pydantic>=2.8
+pydantic-settings>=2.4
+
+# RAG stack (all free / open source)
+chromadb>=1.0          # embedded vector database
+fastembed>=0.7         # ONNX embeddings — no torch needed, fast on CPU
+rank-bm25>=0.2.2       # lexical search for hybrid retrieval
+
+# HTTP client (LLM calls + data download)
+httpx>=0.27
+
+# HTML parsing for the sayings source
+beautifulsoup4>=4.12
+lxml>=5.2
+
+# Tests
+pytest>=8.2

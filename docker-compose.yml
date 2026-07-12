@@ -1,0 +1,23 @@
+services:
+  nahj-ai:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - LLM_BASE_URL=http://ollama:11434/v1
+      - LLM_MODEL=llama3.1:8b
+      - LLM_API_KEY=ollama
+    depends_on:
+      - ollama
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama-models:/root/.ollama
+    # After first start, pull the model once:
+    #   docker compose exec ollama ollama pull llama3.1:8b
+    restart: unless-stopped
+
+volumes:
+  ollama-models:

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nahj AI — Nahjul Balagha Assistant</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🕌</text></svg>" />
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="header-title">
+        <h1>Nahj AI</h1>
+        <p>Ask about the sermons, letters &amp; sayings of Imam Ali (a) — Nahjul Balagha</p>
+      </div>
+      <div class="header-status" id="status" title="Backend status">●</div>
+    </header>
+
+    <main class="chat" id="chat">
+      <div class="welcome" id="welcome">
+        <div class="welcome-icon">☪</div>
+        <h2>Peace be upon you</h2>
+        <p>I answer using passages retrieved directly from Nahjul Balagha, with citations you can verify.</p>
+        <div class="suggestions">
+          <button class="suggestion">What does Imam Ali say about patience?</button>
+          <button class="suggestion">Summarize Letter 31 — his advice to his son</button>
+          <button class="suggestion">What guidance is given to rulers in the letter to Malik al-Ashtar?</button>
+          <button class="suggestion">What is said about the fleeting nature of this world?</button>
+        </div>
+      </div>
+    </main>
+
+    <footer class="composer">
+      <form id="form">
+        <textarea id="input" rows="1" placeholder="Ask a question about Nahjul Balagha…" maxlength="4000"></textarea>
+        <button type="submit" id="send" aria-label="Send">➤</button>
+      </form>
+      <p class="disclaimer">Answers are AI-generated from the Sayyid Ali Raza translation. Always verify with the cited passages.</p>
+    </footer>
+  </div>
+
+  <div class="modal-backdrop hidden" id="modal-backdrop">
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modal-header">
+        <h3 id="modal-title"></h3>
+        <button id="modal-close" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

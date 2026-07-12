@@ -1,3 +1,13 @@
+---
+title: Nahj AI
+emoji: 🕌
+colorFrom: green
+colorTo: gray
+sdk: docker
+app_port: 8000
+pinned: false
+---
+
 # Nahj AI 🕌
 
 A production-quality, fully open-source **RAG chatbot for Nahjul Balagha** — the

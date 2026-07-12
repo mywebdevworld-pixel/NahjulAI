@@ -16,6 +16,7 @@ from app.models import (
 )
 from app.rag import generator
 from app.rag.retriever import RetrievedChunk, Retriever
+from app.ratelimit import chat_limiter, search_limiter
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -43,6 +44,7 @@ def _sse(event: str, data: dict | list) -> str:
 @router.post("/chat")
 async def chat(payload: ChatRequest, request: Request) -> StreamingResponse:
     """Stream a grounded answer. SSE events: `sources`, `token`, `done`, `error`."""
+    chat_limiter.check(request)
     settings = get_settings()
     retriever = get_retriever(request)
 
@@ -94,6 +96,7 @@ async def chat(payload: ChatRequest, request: Request) -> StreamingResponse:
 
 @router.get("/search", response_model=SearchResponse)
 async def search(q: str, request: Request, k: int = 6) -> SearchResponse:
+    search_limiter.check(request)
     if not q.strip():
         raise HTTPException(status_code=422, detail="Query must not be empty")
     retriever = get_retriever(request)

@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Nahj AI — System Architecture</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", system-ui, sans-serif;
+    color: #232019; font-size: 10.5pt; line-height: 1.55;
+  }
+  h1 { font-size: 22pt; color: #0e6b5c; margin-bottom: 2mm; }
+  .subtitle { color: #6f6a5e; font-size: 11pt; margin-bottom: 8mm; }
+  h2 {
+    font-size: 14pt; color: #0e6b5c; margin: 8mm 0 3mm;
+    border-bottom: 2px solid #0e6b5c; padding-bottom: 1mm;
+  }
+  h3 { font-size: 11.5pt; margin: 5mm 0 2mm; color: #232019; }
+  p { margin-bottom: 2.5mm; }
+  ul, ol { margin: 0 0 3mm 6mm; }
+  li { margin-bottom: 1.2mm; }
+  code {
+    font-family: Consolas, monospace; font-size: 9pt;
+    background: #efece4; padding: 0.3mm 1.2mm; border-radius: 2px;
+  }
+  pre {
+    font-family: Consolas, monospace; font-size: 8.5pt; line-height: 1.45;
+    background: #f6f4ef; border: 1px solid #e3dfd4; border-radius: 4px;
+    padding: 3mm; margin: 3mm 0; white-space: pre; overflow: hidden;
+  }
+  table { border-collapse: collapse; width: 100%; margin: 3mm 0; font-size: 9.5pt; }
+  th, td { border: 1px solid #d8d3c6; padding: 1.8mm 2.5mm; text-align: left; vertical-align: top; }
+  th { background: #0e6b5c; color: #fff; font-weight: 600; }
+  tr:nth-child(even) td { background: #f6f4ef; }
+  .box {
+    background: #e0efec; border-left: 4px solid #0e6b5c;
+    padding: 2.5mm 4mm; margin: 3mm 0; border-radius: 0 4px 4px 0;
+  }
+  .pagebreak { page-break-before: always; }
+  .footer-note { color: #6f6a5e; font-size: 8.5pt; margin-top: 8mm; border-top: 1px solid #e3dfd4; padding-top: 2mm; }
+</style>
+</head>
+<body>
+
+<h1>Nahj AI — System Architecture</h1>
+<p class="subtitle">A production-quality, fully open-source RAG chatbot for Nahjul Balagha<br>
+Prepared July 2026 · Repository: github.com/mywebdevworld-pixel/NahjulAI</p>
+
+<h2>1. What the system does</h2>
+<p>Nahj AI answers natural-language questions about <strong>Nahjul Balagha</strong> — the collection of
+240 sermons, 79 letters, and 480 sayings of Imam Ali ibn Abi Talib (peace be upon him), compiled by
+al-Sharif al-Radi (English translation by Sayyid Ali Raza). It uses <strong>Retrieval-Augmented
+Generation (RAG)</strong>: instead of letting an AI model answer from its own (unreliable) memory, the
+system first <em>retrieves</em> the actual passages relevant to the question, then instructs the model to
+answer <em>only</em> from those passages, citing each one (e.g. <code>[Sermon 27]</code>). Every citation is
+clickable in the UI and opens the full original passage, so every answer is verifiable.</p>
+
+<h2>2. High-level architecture</h2>
+<pre>
+ ┌──────────────┐  question   ┌──────────────────────────────────────────────┐
+ │   Browser    │ ──────────► │              FastAPI backend                 │
+ │  (frontend/) │             │                                              │
+ │  vanilla JS  │ ◄────────── │  1. Reference detector  ("Sermon 27" → pin)  │
+ │  chat UI     │  SSE stream │  2. Hybrid retriever                         │
+ └──────────────┘  (sources,  │       ├─ Vector search ── ChromaDB           │
+                    tokens)   │       └─ Keyword search ─ BM25 (in memory)   │
+                              │       merged via Reciprocal Rank Fusion      │
+                              │  3. Prompt builder (passages + rules)        │
+                              │  4. LLM client ──► OpenAI-compatible API     │
+                              │       (Groq cloud  /  Ollama local)          │
+                              │  5. Extractive fallback (works with no LLM)  │
+                              └──────────────────────────────────────────────┘
+                                        ▲
+                              ┌─────────┴──────────┐
+                              │  Offline pipeline  │  (run once, or on data change)
+                              │  download → scrape │
+                              │  → parse → chunk   │
+                              │  → embed → index   │
+                              └────────────────────┘
+</pre>
+
+<h2>3. Technology stack (all free / open source)</h2>
+<table>
+<tr><th>Layer</th><th>Technology</th><th>Why this choice</th></tr>
+<tr><td>Web framework</td><td>FastAPI + Uvicorn (Python 3.13)</td><td>Async, typed, automatic OpenAPI docs at <code>/docs</code>, first-class streaming support</td></tr>
+<tr><td>Embeddings</td><td>fastembed — model <code>BAAI/bge-small-en-v1.5</code> (384-dim)</td><td>ONNX runtime: fast on plain CPUs, ~130&nbsp;MB, no 2.5&nbsp;GB PyTorch dependency</td></tr>
+<tr><td>Vector database</td><td>ChromaDB (embedded/persistent mode)</td><td>Runs inside the app process — no separate DB server to operate</td></tr>
+<tr><td>Keyword search</td><td>rank-bm25 (BM25Okapi, in-memory)</td><td>Catches exact-word matches that semantic search can miss</td></tr>
+<tr><td>LLM</td><td>Any OpenAI-compatible endpoint (currently Groq, <code>llama-3.3-70b-versatile</code>)</td><td>Provider-agnostic: swap Groq / Ollama / OpenRouter by editing 3 env vars</td></tr>
+<tr><td>Data validation</td><td>Pydantic v2 + pydantic-settings</td><td>Typed request/response schemas and .env-driven configuration</td></tr>
+<tr><td>Scraping/parsing</td><td>httpx, curl, BeautifulSoup + lxml</td><td>Robust ingestion of markdown and bilingual HTML sources</td></tr>
+<tr><td>Frontend</td><td>Vanilla HTML/CSS/JS (zero dependencies)</td><td>No build step, no framework churn, dark-mode aware, fully self-contained</td></tr>
+<tr><td>Packaging</td><td>Docker + docker-compose</td><td>One-command reproducible deployment; index baked in at build time</td></tr>
+<tr><td>Tests</td><td>pytest (11 tests)</td><td>Corpus integrity + API behaviour, including the SSE stream</td></tr>
+</table>
+
+<h2>4. The offline data pipeline</h2>
+<p>Four scripts, run in order, turn public web sources into a searchable knowledge base:</p>
+<ol>
+<li><strong><code>scripts/download_data.py</code></strong> — downloads the sermons/letters markdown
+(GitHub: MonisBana/Nahjul-Balagha) and the sayings page (al-islam.org) into <code>data/raw/</code>.
+Falls back to <code>curl</code> when a host rejects Python's TLS fingerprint.</li>
+<li><strong><code>scripts/scrape_alislam.py</code></strong> — the markdown source was missing 24 letters and
+2 sermons, so this scrapes all 79 letters (plus missing sermons) from al-islam.org, caching each page.
+It filters out Arabic paragraphs (the pages are bilingual) with a script-ratio heuristic.</li>
+<li><strong><code>scripts/build_corpus.py</code></strong> — parses and merges everything into a single
+normalized file, <code>data/corpus.json</code>: 799 documents, each with <code>{id, type, number, ref,
+title, text}</code> (e.g. <code>sermon-27</code>, <code>letter-53</code>, <code>saying-100</code>).</li>
+<li><strong><code>scripts/ingest.py</code></strong> — splits each document into ~1,500-character chunks on
+paragraph boundaries (with one-paragraph overlap so context isn't cut mid-thought), embeds every chunk
+into a 384-dimension vector, and stores <strong>1,579 chunks</strong> in ChromaDB with their metadata.</li>
+</ol>
+
+<div class="box"><strong>Why chunking?</strong> A sermon can be many pages long. Embedding models and LLM
+context windows work best with focused passages, so long texts are split into overlapping chunks; each
+chunk remembers which document it came from (<code>doc_id</code>, <code>ref</code>, <code>chunk_index</code>).</div>
+
+<h2 class="pagebreak">5. Where data is stored</h2>
+<table>
+<tr><th>Location</th><th>Contents</th><th>In git?</th></tr>
+<tr><td><code>data/raw/</code></td><td>Original downloaded sources (markdown, HTML, cached scrape pages)</td><td>No — rebuilt by scripts</td></tr>
+<tr><td><code>data/corpus.json</code></td><td>The normalized corpus: 799 documents, ~1.3&nbsp;M characters of English text</td><td>No — rebuilt by scripts</td></tr>
+<tr><td><code>data/chroma/</code></td><td>ChromaDB persistent store: an SQLite file + HNSW vector index holding all 1,579 chunk embeddings and metadata</td><td>No — rebuilt by ingest</td></tr>
+<tr><td>In memory (at startup)</td><td>BM25 keyword index + corpus lookup table, built from the two stores above in ~1 second</td><td>—</td></tr>
+<tr><td><code>.env</code></td><td>Secrets and configuration (LLM endpoint, model, API key)</td><td><strong>Never</strong> — gitignored</td></tr>
+<tr><td>Docker image</td><td>In deployment, the whole pipeline runs at <em>build</em> time, so corpus + index are baked into the image; nothing needs a database server</td><td>—</td></tr>
+</table>
+<p>There is no user database: conversation history lives only in the browser tab and is sent with each
+request (a stateless backend — simple to scale and nothing personal is stored server-side).</p>
+
+<h2>6. How a question is answered (request lifecycle)</h2>
+<ol>
+<li><strong>The browser</strong> POSTs <code>{message, history}</code> to <code>/api/chat</code>.</li>
+<li><strong>Rate limiter</strong> — a per-IP sliding window (10 chats/minute) protects the free LLM quota.</li>
+<li><strong>Reference detection</strong> — a regex looks for explicit citations in the question
+("letter 31", "hikmah 55"...). Matching documents are fetched directly and <em>pinned</em> to the top of
+the context, guaranteeing "summarize Letter 31" actually sees Letter 31.</li>
+<li><strong>Hybrid retrieval</strong> — the question is embedded into a vector and searched in ChromaDB
+(semantic similarity); simultaneously BM25 ranks chunks by keyword overlap. The two rankings are merged
+with <em>Reciprocal Rank Fusion</em>: each chunk scores <code>Σ 1/(60 + rank)</code> across both lists, which
+rewards passages that both methods agree on. The top 6 chunks survive.</li>
+<li><strong>Prompt building</strong> — a system prompt defines the assistant's identity and hard rules
+(answer only from context, cite every claim as <code>[Sermon N]</code>, quote exactly, admit when the context
+is insufficient, respect the religious significance, mirror the user's language). The retrieved passages
+and recent conversation turns are appended, then the user's question.</li>
+<li><strong>Generation</strong> — the prompt is streamed to the LLM. Tokens are forwarded to the browser
+in real time over <strong>Server-Sent Events</strong>: first a <code>sources</code> event (the retrieved
+passages, shown as source cards), then <code>token</code> events, then <code>done</code>.</li>
+<li><strong>Fallback</strong> — if no LLM is reachable or the call fails, the API returns the top passages
+verbatim with citations ("extractive mode") instead of erroring out.</li>
+</ol>
+
+<h2>7. The LLM: how we connect and what it is for</h2>
+<h3>Connection</h3>
+<p>The app speaks the <strong>OpenAI-compatible chat-completions protocol</strong> — a de-facto standard
+implemented by nearly every LLM provider. The client (<code>app/rag/generator.py</code>) is ~50 lines of
+<code>httpx</code> that POSTs to <code>{LLM_BASE_URL}/chat/completions</code> with <code>stream: true</code> and
+parses the SSE token stream. Because only three environment variables define the provider, swapping
+LLMs requires <em>zero code changes</em>:</p>
+<table>
+<tr><th>Provider</th><th>LLM_BASE_URL</th><th>Notes</th></tr>
+<tr><td>Groq (current)</td><td><code>https://api.groq.com/openai/v1</code></td><td>Hosted, free tier, very fast (Llama&nbsp;3.3&nbsp;70B)</td></tr>
+<tr><td>Ollama</td><td><code>http://localhost:11434/v1</code></td><td>Runs models locally — fully private, offline-capable</td></tr>
+<tr><td>OpenRouter</td><td><code>https://openrouter.ai/api/v1</code></td><td>Gateway to many free/paid open models</td></tr>
+</table>
+<h3>Role of the LLM</h3>
+<p>The LLM is deliberately given a <strong>narrow job: language, not knowledge</strong>. It does not decide
+what Nahjul Balagha says — the retrieval layer does that. The LLM's job is to:</p>
+<ul>
+<li>read the retrieved passages and <strong>synthesize</strong> a coherent, well-structured answer;</li>
+<li><strong>quote and cite</strong> accurately from the supplied text;</li>
+<li>handle conversation flow (follow-up questions, clarifications, the user's language);</li>
+<li><strong>refuse</strong> to answer when the retrieved context doesn't contain the answer.</li>
+</ul>
+<div class="box">This division of labor is the core design principle: <strong>retrieval provides truth,
+the LLM provides fluency</strong>. It is what makes the system trustworthy enough for a religious text where
+fabricated quotes would be unacceptable — and it means the knowledge base can be corrected or extended
+without retraining anything.</div>
+
+<h2 class="pagebreak">8. API surface</h2>
+<table>
+<tr><th>Endpoint</th><th>Method</th><th>Purpose</th></tr>
+<tr><td><code>/api/chat</code></td><td>POST</td><td>Streamed, cited answer (SSE: sources → tokens → done); rate-limited 10/min/IP</td></tr>
+<tr><td><code>/api/search?q=&amp;k=</code></td><td>GET</td><td>Raw hybrid search — returns ranked passages without LLM involvement</td></tr>
+<tr><td><code>/api/passage/{type}/{n}</code></td><td>GET</td><td>Full original text of any sermon/letter/saying (powers the citation viewer)</td></tr>
+<tr><td><code>/api/health</code></td><td>GET</td><td>Corpus size, index size, LLM reachability — drives the UI status dot</td></tr>
+<tr><td><code>/</code></td><td>GET</td><td>The chat frontend (static files served by FastAPI)</td></tr>
+<tr><td><code>/docs</code></td><td>GET</td><td>Auto-generated interactive Swagger documentation</td></tr>
+</table>
+
+<h2>9. Frontend</h2>
+<p>A single-page chat interface (<code>frontend/</code>) written in plain HTML/CSS/JS — no framework, no
+build step, no CDN calls. It renders the streamed answer live, converts <code>[Sermon 27]</code>-style
+citations into clickable chips, shows collapsible source cards under each answer, and opens a modal with
+the full passage when a citation is clicked. It adapts to the OS light/dark theme and is responsive down
+to phone widths. Conversation history is kept client-side and trimmed to the last 20 messages.</p>
+
+<h2>10. Deployment &amp; operations</h2>
+<ul>
+<li><strong>Local:</strong> <code>uvicorn app.main:app --port 8000</code> inside the project's virtualenv.</li>
+<li><strong>Docker:</strong> the Dockerfile installs dependencies, runs the entire data pipeline at
+<em>build</em> time (so the image ships with the index — instant cold starts, no runtime downloads except
+nothing), runs as non-root UID 1000, and honors the host's <code>PORT</code> variable.</li>
+<li><strong>docker-compose:</strong> app + optional Ollama sidecar for a fully local, private stack.</li>
+<li><strong>Cloud:</strong> deployable to any Docker host; Render free tier is the current target
+(GitHub-connected, env vars in dashboard, sleeps when idle).</li>
+<li><strong>Security posture:</strong> API key only in env/secrets (never in git), per-IP rate limiting,
+input length limits via Pydantic, CORS configurable, no server-side user data.</li>
+</ul>
+
+<h2>11. Project layout</h2>
+<pre>
+app/
+  main.py            FastAPI app: startup (loads retriever), CORS, static frontend
+  config.py          All settings from environment / .env (pydantic-settings)
+  models.py          Request/response schemas (Pydantic)
+  ratelimit.py       Per-IP sliding-window rate limiter
+  api/routes.py      /api/chat, /api/search, /api/passage, /api/health
+  rag/
+    embeddings.py    fastembed wrapper (lazy-loaded, cached model)
+    vectorstore.py   ChromaDB persistent collection management
+    retriever.py     hybrid search: vectors + BM25 + RRF + reference pinning
+    generator.py     system prompt, LLM streaming client, extractive fallback
+scripts/             download_data → scrape_alislam → build_corpus → ingest
+frontend/            index.html, style.css, app.js (zero-dependency chat UI)
+tests/               11 tests: corpus integrity + API behaviour
+Dockerfile, docker-compose.yml, requirements.txt, .env.example, README.md
+</pre>
+
+<p class="footer-note">Nahj AI · Architecture document · July 2026 · All components free and open source.
+Translation: Sayyid Ali Raza (English). Answers are AI-generated and should be verified against the cited
+passages — the citation viewer exists precisely for that purpose.</p>
+
+</body>
+</html>

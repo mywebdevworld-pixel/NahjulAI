@@ -15,17 +15,16 @@ COPY --chown=appuser:appuser app/ app/
 COPY --chown=appuser:appuser scripts/ scripts/
 COPY --chown=appuser:appuser frontend/ frontend/
 
-RUN mkdir -p data && chown -R appuser:appuser /app
+# Corpus + vector index are pre-built and committed (see scripts/), not
+# regenerated at image-build time: al-islam.org blocks scraping from cloud
+# hosting IP ranges (Render, HF Spaces, Cloud Run all hit this).
+COPY --chown=appuser:appuser data/corpus.json data/corpus.json
+COPY --chown=appuser:appuser data/chroma/ data/chroma/
+
+RUN chown -R appuser:appuser /app
 
 USER appuser
 ENV HOME=/home/appuser
-
-# Build the corpus + index at image build time (bakes data into the image).
-# Runs as appuser so the embedding-model cache is reusable at runtime.
-RUN python scripts/download_data.py && \
-    python scripts/scrape_alislam.py && \
-    python scripts/build_corpus.py && \
-    python scripts/ingest.py
 
 EXPOSE 8000
 

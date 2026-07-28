@@ -15,6 +15,8 @@ COPY --chown=appuser:appuser app/ app/
 COPY --chown=appuser:appuser scripts/ scripts/
 COPY --chown=appuser:appuser frontend/ frontend/
 
+RUN mkdir -p data && chown -R appuser:appuser /app
+
 USER appuser
 ENV HOME=/home/appuser
 
